@@ -19,7 +19,7 @@ $services = $pdo->query("
     FROM services sv
     LEFT JOIN servers s ON sv.id = s.service_id AND s.is_enabled = 1
     WHERE sv.is_enabled = 1
-    GROUP BY sv.id, sv.name, sv.code, sv.icon, sv.sort_order, sv.is_enabled, sv.created_at, sv.updated_at
+    GROUP BY sv.id
     ORDER BY sv.sort_order ASC
     LIMIT 8
 ")->fetchAll();
@@ -31,7 +31,7 @@ $countries = $pdo->query("
     FROM countries c
     LEFT JOIN servers s ON c.id = s.country_id AND s.is_enabled = 1
     WHERE c.is_enabled = 1
-    GROUP BY c.id, c.name, c.code, c.prefix, c.is_enabled, c.sort_order, c.created_at, c.updated_at
+    GROUP BY c.id
     ORDER BY c.sort_order ASC
     LIMIT 8
 ")->fetchAll();

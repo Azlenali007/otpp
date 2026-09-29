@@ -27,6 +27,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error = 'Admin password must be at least 8 characters long and all fields are required.';
     } else {
         try {
+            // 0. Persist verified database configuration from Step 3
+            if (!empty($_SESSION['install_db']) && is_array($_SESSION['install_db'])) {
+                $dbConfigFile = STORAGE_PATH . '/db_config.json';
+                @file_put_contents($dbConfigFile, json_encode($_SESSION['install_db'], JSON_PRETTY_PRINT), LOCK_EX);
+                @chmod($dbConfigFile, 0600);
+            }
+
             $pdo = get_db();
 
             // 1. Save settings

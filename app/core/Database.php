@@ -16,40 +16,108 @@ class Database {
     private static ?PDO $pdo = null;
 
     public static function getConnection(): PDO {
-        if (self::$pdo === null) {
-            $config = require __DIR__ . '/../config/database.php';
-            $dsn = sprintf(
-                'mysql:host=%s;port=%d;dbname=%s;charset=%s',
-                $config['host'],
-                $config['port'],
-                $config['database'],
-                $config['charset']
-            );
+        if (self::$pdo !== null) {
+            return self::$pdo;
+        }
 
-            try {
-                self::$pdo = new PDO($dsn, $config['username'], $config['password'], $config['options']);
-            } catch (PDOException $e) {
-                // Try localhost fallback for local MariaDB sockets/root
-                try {
-                    $fallbackDsn = sprintf('mysql:host=127.0.0.1;port=3306;dbname=%s;charset=utf8mb4', $config['database']);
-                    self::$pdo = new PDO($fallbackDsn, 'root', '', $config['options']);
-                } catch (PDOException $e2) {
-                    Logger::error("Database connection failure: " . $e2->getMessage());
-                    
-                    // If during installation or not installed, gracefully handle
-                    $lockFile = __DIR__ . '/../../storage/installed.lock';
-                    $isInstallPage = str_contains($_SERVER['REQUEST_URI'] ?? '', '/install/');
-                    if (!file_exists($lockFile) && !$isInstallPage) {
-                        header('Location: /install/index.php');
-                        exit;
-                    }
+        $config = require __DIR__ . '/../config/database.php';
+        $host     = (string)$config['host'];
+        $port     = (int)$config['port'];
+        $database = (string)$config['database'];
+        $username = (string)$config['username'];
+        $password = (string)$config['password'];
+        $charset  = (string)$config['charset'];
+        $options  = (array)$config['options'];
 
-                    // Return generic message in production to prevent credential leakage
-                    die("Database connection is currently unavailable. Please contact the administrator or verify your database setup.");
-                }
+        // Known local MariaDB/MySQL UNIX socket paths
+        $knownSockets = [
+            '/run/mysqld/mysqld.sock',
+            '/var/run/mysqld/mysqld.sock',
+            '/tmp/mysql.sock',
+            '/var/lib/mysql/mysql.sock',
+        ];
+
+        // Build list of connection attempts in priority order
+        $candidates = [];
+
+        // 1. Primary configured DSN
+        $candidates[] = [
+            'dsn'  => "mysql:host={$host};port={$port};dbname={$database};charset={$charset}",
+            'user' => $username,
+            'pass' => $password,
+            'desc' => "TCP Host ({$host}:{$port})"
+        ];
+
+        // 2. Localhost socket fallback with configured credentials
+        if ($host !== 'localhost') {
+            $candidates[] = [
+                'dsn'  => "mysql:host=localhost;dbname={$database};charset={$charset}",
+                'user' => $username,
+                'pass' => $password,
+                'desc' => "Localhost Socket with configured user"
+            ];
+        }
+
+        // 3. 127.0.0.1 TCP fallback if primary host was localhost
+        if ($host !== '127.0.0.1') {
+            $candidates[] = [
+                'dsn'  => "mysql:host=127.0.0.1;port=3306;dbname={$database};charset={$charset}",
+                'user' => $username,
+                'pass' => $password,
+                'desc' => "127.0.0.1:3306 TCP with configured user"
+            ];
+        }
+
+        // 4. Direct UNIX socket attempts with configured credentials
+        foreach ($knownSockets as $socket) {
+            if (file_exists($socket)) {
+                $candidates[] = [
+                    'dsn'  => "mysql:unix_socket={$socket};dbname={$database};charset={$charset}",
+                    'user' => $username,
+                    'pass' => $password,
+                    'desc' => "Unix socket ({$socket}) with configured user"
+                ];
+                // 5. Unix socket attempt with local root auth (socket authentication)
+                $candidates[] = [
+                    'dsn'  => "mysql:unix_socket={$socket};dbname={$database};charset={$charset}",
+                    'user' => 'root',
+                    'pass' => '',
+                    'desc' => "Unix socket ({$socket}) with root socket auth"
+                ];
             }
         }
-        return self::$pdo;
+
+        $errors = [];
+        foreach ($candidates as $cand) {
+            try {
+                $pdo = new PDO($cand['dsn'], $cand['user'], $cand['pass'], $options);
+                // Verify connection works with a simple ping
+                $pdo->query("SELECT 1");
+                self::$pdo = $pdo;
+                return self::$pdo;
+            } catch (PDOException $e) {
+                $errors[] = "[{$cand['desc']}] " . $e->getMessage();
+            }
+        }
+
+        // All connection strategies failed: Log technically for debugging
+        $errorLogMessage = "All database connection attempts failed for database '{$database}': " . implode(" | ", $errors);
+        Logger::error($errorLogMessage);
+
+        // Check if application is not installed yet
+        $lockFile = dirname(__DIR__, 2) . '/storage/installed.lock';
+        $rootLock = dirname(__DIR__, 2) . '/installed.lock';
+        $isInstalled = file_exists($lockFile) || file_exists($rootLock);
+        $isInstallPage = str_contains($_SERVER['REQUEST_URI'] ?? '', '/install/');
+
+        if (!$isInstalled && !$isInstallPage) {
+            header('Location: /install/index.php');
+            exit;
+        }
+
+        // Keep production response secure without exposing credentials
+        http_response_code(500);
+        die("Database connection is currently unavailable. Please contact the administrator or verify your database setup.");
     }
 
     /**
@@ -58,6 +126,7 @@ class Database {
     public static function transaction(callable $callback): mixed {
         $pdo = self::getConnection();
         $pdo->beginTransaction();
+
         try {
             $result = $callback($pdo);
             $pdo->commit();
@@ -66,7 +135,6 @@ class Database {
             if ($pdo->inTransaction()) {
                 $pdo->rollBack();
             }
-            Logger::error("Transaction rollback: " . $e->getMessage());
             throw $e;
         }
     }
