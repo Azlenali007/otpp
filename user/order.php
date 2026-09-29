@@ -43,14 +43,10 @@ if (!$order) {
     exit;
 }
 
-// Check status immediately
-if ($order['status'] === 'active') {
+// Check status: If expired by time, process refund immediately; active polling is handled asynchronously
+if ($order['status'] === 'active' && (int)$order['seconds_left'] <= 0) {
     $res = OrderEngine::checkAndUpdateOrder($orderId);
-    if (!empty($res['otp'])) {
-        $order['status'] = 'completed';
-        $order['otp_code'] = $res['otp'];
-        $order['sms_text'] = $res['sms_text'];
-    } elseif (!empty($res['is_refunded'])) {
+    if (!empty($res['is_refunded'])) {
         $order['status'] = 'expired';
         $order['is_refunded'] = 1;
     }

@@ -10,13 +10,22 @@ $admin = require_admin();
 $siteName = get_setting('site_name', 'NumVault');
 
 // Real-time counter metrics
-$activeOrdersCount = 0;
-$pendingTickets = 0;
-try {
-    $pdo = get_db();
-    $activeOrdersCount = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'active'")->fetchColumn();
-    $pendingTickets = (int)$pdo->query("SELECT COUNT(*) FROM tickets WHERE status IN ('open', 'answered')")->fetchColumn();
-} catch (Exception $e) {}
+if (!isset($activeOrdersCount)) {
+    try {
+        $pdo = get_db();
+        $activeOrdersCount = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'active'")->fetchColumn();
+    } catch (Exception $e) {
+        $activeOrdersCount = 0;
+    }
+}
+if (!isset($pendingTickets)) {
+    try {
+        $pdo = get_db();
+        $pendingTickets = (int)$pdo->query("SELECT COUNT(*) FROM tickets WHERE status IN ('open', 'answered')")->fetchColumn();
+    } catch (Exception $e) {
+        $pendingTickets = 0;
+    }
+}
 
 $currentScript = basename($_SERVER['PHP_SELF'] ?? '');
 $flashes = get_flash();

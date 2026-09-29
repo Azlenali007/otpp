@@ -79,11 +79,6 @@ $servers = $pdo->query("
     ORDER BY s.service_id ASC, s.country_id ASC, s.selling_price ASC
 ")->fetchAll();
 
-// Fetch lists for form selects
-$allServices = $pdo->query("SELECT id, name FROM services WHERE is_enabled = 1 ORDER BY name ASC")->fetchAll();
-$allCountries = $pdo->query("SELECT id, name, prefix FROM countries WHERE is_enabled = 1 ORDER BY name ASC")->fetchAll();
-$allProviders = $pdo->query("SELECT id, name FROM providers WHERE is_enabled = 1 ORDER BY name ASC")->fetchAll();
-
 $editServer = null;
 if (isset($_GET['edit'])) {
     $eId = (int)$_GET['edit'];
@@ -91,6 +86,11 @@ if (isset($_GET['edit'])) {
     $stmt->execute([$eId]);
     $editServer = $stmt->fetch();
 }
+
+$isFormVisible = ($editServer !== null || (isset($_GET['action']) && $_GET['action'] === 'new'));
+$allServices = $isFormVisible ? $pdo->query("SELECT id, name FROM services WHERE is_enabled = 1 ORDER BY name ASC")->fetchAll() : [];
+$allCountries = $isFormVisible ? $pdo->query("SELECT id, name, prefix FROM countries WHERE is_enabled = 1 ORDER BY name ASC")->fetchAll() : [];
+$allProviders = $isFormVisible ? $pdo->query("SELECT id, name FROM providers WHERE is_enabled = 1 ORDER BY name ASC")->fetchAll() : [];
 
 require_once __DIR__ . '/../app/layouts/admin_header.php';
 ?>

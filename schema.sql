@@ -68,7 +68,9 @@ CREATE TABLE IF NOT EXISTS `servers` (
   `selling_price` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
   `is_enabled` TINYINT(1) DEFAULT 1,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_svc_ctry (`service_id`, `country_id`, `is_enabled`)
+  INDEX idx_svc_ctry (`service_id`, `country_id`, `is_enabled`),
+  INDEX idx_country_enabled (`country_id`, `is_enabled`, `service_id`),
+  INDEX idx_provider_enabled (`provider_id`, `is_enabled`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `orders` (
@@ -92,7 +94,9 @@ CREATE TABLE IF NOT EXISTS `orders` (
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_status (`status`),
-  INDEX idx_expires (`expires_at`, `status`)
+  INDEX idx_expires (`expires_at`, `status`),
+  INDEX idx_user_status (`user_id`, `status`),
+  INDEX idx_user_created (`user_id`, `created_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `wallet_transactions` (
@@ -107,7 +111,9 @@ CREATE TABLE IF NOT EXISTS `wallet_transactions` (
   `description` VARCHAR(255) NOT NULL,
   `reference_id` VARCHAR(100) NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  INDEX idx_user_tx (`user_id`, `created_at`)
+  INDEX idx_user_tx (`user_id`, `created_at`),
+  INDEX idx_order (`order_id`),
+  INDEX idx_payment (`payment_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `payments` (
@@ -120,7 +126,8 @@ CREATE TABLE IF NOT EXISTS `payments` (
   `gateway_response` TEXT NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  INDEX idx_status (`status`)
+  INDEX idx_status (`status`),
+  INDEX idx_user (`user_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `tickets` (
@@ -131,7 +138,9 @@ CREATE TABLE IF NOT EXISTS `tickets` (
   `priority` ENUM('low', 'medium', 'high') DEFAULT 'medium',
   `status` ENUM('open', 'answered', 'resolved', 'closed') DEFAULT 'open',
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  INDEX idx_user (`user_id`),
+  INDEX idx_status (`status`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `ticket_replies` (
@@ -140,7 +149,8 @@ CREATE TABLE IF NOT EXISTS `ticket_replies` (
   `user_id` INT NOT NULL,
   `is_admin` TINYINT(1) DEFAULT 0,
   `message` TEXT NOT NULL,
-  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  INDEX idx_ticket (`ticket_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `notifications` (

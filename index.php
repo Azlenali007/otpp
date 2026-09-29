@@ -37,8 +37,9 @@ $countries = $pdo->query("
 ")->fetchAll();
 
 // 3. Platform live metrics from MySQL
-$totalOrders = (int)$pdo->query("SELECT COUNT(*) FROM orders")->fetchColumn();
-$deliveredCount = (int)$pdo->query("SELECT COUNT(*) FROM orders WHERE status = 'completed'")->fetchColumn();
+$orderMetrics = $pdo->query("SELECT COUNT(*) AS total, COALESCE(SUM(status = 'completed'), 0) AS delivered FROM orders")->fetch();
+$totalOrders = (int)($orderMetrics['total'] ?? 0);
+$deliveredCount = (int)($orderMetrics['delivered'] ?? 0);
 $countryCount = (int)$pdo->query("SELECT COUNT(*) FROM countries WHERE is_enabled = 1")->fetchColumn();
 
 $pageTitle = "Carrier-Grade Virtual Number & SMS OTP Marketplace";

@@ -11,13 +11,16 @@ $siteName = get_setting('site_name', 'NumVault');
 $currency = get_setting('currency_symbol', '$');
 
 // Fetch unread notifications count
-$unreadCount = 0;
-try {
-    $pdo = get_db();
-    $nStmt = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0");
-    $nStmt->execute([$user['id']]);
-    $unreadCount = (int)$nStmt->fetchColumn();
-} catch (Exception $e) {}
+if (!isset($unreadCount)) {
+    try {
+        $pdo = get_db();
+        $nStmt = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0");
+        $nStmt->execute([$user['id']]);
+        $unreadCount = (int)$nStmt->fetchColumn();
+    } catch (Exception $e) {
+        $unreadCount = 0;
+    }
+}
 
 $currentScript = basename($_SERVER['PHP_SELF'] ?? '');
 $flashes = get_flash();

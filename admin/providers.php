@@ -61,36 +61,59 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($name) || empty($slug) || empty($apiUrl)) {
             $error = 'Provider name, slug, and API endpoint URL are required.';
         } else {
-            if ($id > 0) {
-                // If API key is not modified, keep current key
-                if (empty($apiKey)) {
-                    $upd = $pdo->prepare("
-                        UPDATE providers 
-                        SET name = ?, slug = ?, api_url = ?, priority = ?, currency = ?, is_enabled = ?
-                        WHERE id = ?
-                    ");
-                    $upd->execute([$name, $slug, $apiUrl, $priority, $currency, $isEnabled, $id]);
-                } else {
-                    $upd = $pdo->prepare("
-                        UPDATE providers 
-                        SET name = ?, slug = ?, api_url = ?, api_key = ?, priority = ?, currency = ?, is_enabled = ?
-                        WHERE id = ?
-                    ");
-                    $upd->execute([$name, $slug, $apiUrl, $apiKey, $priority, $currency, $isEnabled, $id]);
+            try {
+                // Ensure unique slug for providers table to prevent SQL 1062 Duplicate entry
+                $originalSlug = preg_replace('/[^a-z0-9_]/', '_', strtolower($slug));
+                if (empty($originalSlug)) {
+                    $originalSlug = 'provider';
                 }
-                log_audit($admin['id'], 'admin_provider_updated', "Updated provider '{$name}'");
-                set_flash('success', "Provider {$name} updated successfully.");
-            } else {
-                $ins = $pdo->prepare("
-                    INSERT INTO providers (name, slug, api_url, api_key, priority, currency, is_enabled)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
-                ");
-                $ins->execute([$name, $slug, $apiUrl, $apiKey, $priority, $currency, $isEnabled]);
-                log_audit($admin['id'], 'admin_provider_created', "Added new provider '{$name}'");
-                set_flash('success', "Provider {$name} created successfully.");
+                $uniqueSlug = $originalSlug;
+                $counter = 1;
+                while (true) {
+                    $check = $pdo->prepare("SELECT id FROM providers WHERE slug = ? AND id != ?");
+                    $check->execute([$uniqueSlug, $id]);
+                    if (!$check->fetch()) {
+                        break;
+                    }
+                    $counter++;
+                    $uniqueSlug = $originalSlug . '_' . $counter;
+                }
+                $slug = $uniqueSlug;
+
+                if ($id > 0) {
+                    // If API key is not modified, keep current key
+                    if (empty($apiKey)) {
+                        $upd = $pdo->prepare("
+                            UPDATE providers 
+                            SET name = ?, slug = ?, api_url = ?, priority = ?, currency = ?, is_enabled = ?
+                            WHERE id = ?
+                        ");
+                        $upd->execute([$name, $slug, $apiUrl, $priority, $currency, $isEnabled, $id]);
+                    } else {
+                        $upd = $pdo->prepare("
+                            UPDATE providers 
+                            SET name = ?, slug = ?, api_url = ?, api_key = ?, priority = ?, currency = ?, is_enabled = ?
+                            WHERE id = ?
+                        ");
+                        $upd->execute([$name, $slug, $apiUrl, $apiKey, $priority, $currency, $isEnabled, $id]);
+                    }
+                    log_audit($admin['id'], 'admin_provider_updated', "Updated provider '{$name}'");
+                    set_flash('success', "Provider {$name} updated successfully.");
+                } else {
+                    $ins = $pdo->prepare("
+                        INSERT INTO providers (name, slug, api_url, api_key, priority, currency, is_enabled)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    $ins->execute([$name, $slug, $apiUrl, $apiKey, $priority, $currency, $isEnabled]);
+                    log_audit($admin['id'], 'admin_provider_created', "Added new provider '{$name}'");
+                    set_flash('success', "Provider {$name} created successfully.");
+                }
+                header('Location: /admin/providers.php');
+                exit;
+            } catch (PDOException $e) {
+                Logger::error("Failed saving provider '{$name}': " . $e->getMessage());
+                $error = 'Database error saving provider: ' . $e->getMessage();
             }
-            header('Location: /admin/providers.php');
-            exit;
         }
     }
 }
@@ -151,11 +174,12 @@ require_once __DIR__ . '/../app/layouts/admin_header.php';
                     <div>
                         <label class="block text-xs font-semibold text-slate-700 mb-1">Adapter Slug</label>
                         <select name="slug" required class="w-full text-xs px-3.5 py-2 rounded-xl border border-slate-300">
-                            <option value="sms_activate" <?= ($editProvider['slug'] ?? '') === 'sms_activate' ? 'selected' : '' ?>>SMS-Activate Adapter</option>
-                            <option value="5sim" <?= ($editProvider['slug'] ?? '') === '5sim' ? 'selected' : '' ?>>5SIM Direct Adapter</option>
-                            <option value="daisysms" <?= ($editProvider['slug'] ?? '') === 'daisysms' ? 'selected' : '' ?>>DaisySMS Adapter</option>
-                            <option value="sms_man" <?= ($editProvider['slug'] ?? '') === 'sms_man' ? 'selected' : '' ?>>SMS-Man Adapter</option>
-                            <option value="custom" <?= ($editProvider['slug'] ?? '') === 'custom' ? 'selected' : '' ?>>Custom REST API</option>
+                            <option value="sms_activate" <?= str_starts_with(($editProvider['slug'] ?? ''), 'sms_activate') ? 'selected' : '' ?>>SMS-Activate Adapter</option>
+                            <option value="5sim" <?= str_starts_with(($editProvider['slug'] ?? ''), '5sim') ? 'selected' : '' ?>>5SIM Direct Adapter</option>
+                            <option value="direct" <?= str_starts_with(($editProvider['slug'] ?? ''), 'direct') ? 'selected' : '' ?>>Direct Carrier / REST API</option>
+                            <option value="daisysms" <?= str_starts_with(($editProvider['slug'] ?? ''), 'daisysms') ? 'selected' : '' ?>>DaisySMS Adapter</option>
+                            <option value="sms_man" <?= str_starts_with(($editProvider['slug'] ?? ''), 'sms_man') ? 'selected' : '' ?>>SMS-Man Adapter</option>
+                            <option value="custom" <?= str_starts_with(($editProvider['slug'] ?? ''), 'custom') ? 'selected' : '' ?>>Custom REST API</option>
                         </select>
                     </div>
                     <div>
