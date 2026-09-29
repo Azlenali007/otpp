@@ -1,0 +1,2 @@
+# Deny direct access to all internal code in app
+Require all denied

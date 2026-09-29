@@ -1,0 +1,12 @@
+User-agent: *
+Disallow: /admin/
+Disallow: /user/
+Disallow: /install/
+Disallow: /cron/
+Disallow: /app/
+Disallow: /storage/
+Disallow: /api.php
+
+Allow: /
+Allow: /auth/login.php
+Allow: /auth/register.php

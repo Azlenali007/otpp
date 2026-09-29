@@ -1,0 +1,4 @@
+# Prevent direct browser discovery and unauthenticated execution
+<FilesMatch "\.php$">
+    # Handled via application token or CLI only
+</FilesMatch>

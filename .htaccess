@@ -1,0 +1,54 @@
+# ==============================================================================
+# NumVault - Production Apache Security Hardening Rules
+# ==============================================================================
+
+# Disable directory browsing
+Options -Indexes -MultiViews
+
+# Follow symbolic links
+Options +FollowSymLinks
+
+# Set default charset
+AddDefaultCharset UTF-8
+
+# Protect hidden files and directories (e.g. .git, .env)
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# Block direct access to sensitive extensions
+<FilesMatch "\.(bak|config|sql|fla|psd|ini|log|sh|inc|lock|json|dist|md)$">
+    Require all denied
+</FilesMatch>
+
+# Deny direct access to protected core and internal directories
+RedirectMatch 403 ^/app/
+RedirectMatch 403 ^/storage/
+RedirectMatch 403 ^/cron/
+
+# Rewrite Engine for Clean Routing
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteBase /
+
+    # Block access to git/env
+    RewriteRule ^\.git - [F,L]
+    RewriteRule ^\.env - [F,L]
+
+    # Block protected folders
+    RewriteRule ^app/ - [F,L]
+    RewriteRule ^storage/ - [F,L]
+
+    # Standard rewrite if file doesn't exist
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+    RewriteRule ^(.*)$ router.php [QSA,L]
+</IfModule>
+
+# Security Headers (if mod_headers is loaded)
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set X-Frame-Options "SAMEORIGIN"
+    Header always set X-XSS-Protection "1; mode=block"
+    Header always set Referrer-Policy "strict-origin-when-cross-origin"
+</IfModule>

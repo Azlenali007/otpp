@@ -1,0 +1,6 @@
+{
+  "name": "NumVault - SMS OTP & Virtual Number Marketplace",
+  "description": "Production-ready virtual phone number and SMS OTP verification marketplace with real multi-server providers, atomic wallet, admin control console, and order dispatch engine.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
