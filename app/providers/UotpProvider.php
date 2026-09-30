@@ -23,20 +23,31 @@ class UotpProvider extends BaseProvider implements SmsProviderInterface {
     }
 
     /**
-     * Executes server-side HTTP GET request with SSL verification and error handling
+     * Executes server-side HTTP GET request with SSL verification, redirects and safe error handling
      */
     protected function callUotp(array $params): array {
+        // Enforce required query parameter: api_key={API_KEY}
         $params['api_key'] = $this->apiKey;
 
-        $url = $this->apiUrl . (str_contains($this->apiUrl, '?') ? '&' : '?') . http_build_query($params);
+        // Build cleanly encoded HTTPS URL
+        $separator = str_contains($this->apiUrl, '?') ? '&' : '?';
+        $url = $this->apiUrl . $separator . http_build_query($params);
 
         $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $url);
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_TIMEOUT, 25);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 8);
-        curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
-        curl_setopt($ch, CURLOPT_USERAGENT, 'NumVault-uOTP-Client/2.0');
+        curl_setopt_array($ch, [
+            CURLOPT_URL            => $url,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT        => 25,
+            CURLOPT_SSL_VERIFYPEER => true,
+            CURLOPT_SSL_VERIFYHOST => 2,
+            CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            CURLOPT_HTTPHEADER     => [
+                'Accept: text/plain, text/html, application/json, */*',
+                'Accept-Language: en-US,en;q=0.9'
+            ]
+        ]);
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -63,6 +74,24 @@ class UotpProvider extends BaseProvider implements SmsProviderInterface {
 
         $body = trim((string)$response);
 
+        // Capture and sanitize 403 Forbidden with actual response body
+        if ($httpCode === 403) {
+            $sanitizedBody = strip_tags($body);
+            $sanitizedBody = preg_replace('/\s+/', ' ', $sanitizedBody);
+            if (!empty($this->apiKey)) {
+                $sanitizedBody = str_replace($this->apiKey, '***', $sanitizedBody);
+            }
+            $sanitizedBody = trim(substr($sanitizedBody, 0, 150));
+            $errorMsg = "HTTP 403 Forbidden" . ($sanitizedBody !== '' ? " | Provider response: {$sanitizedBody}" : ": Access denied by uOTP server.");
+            Logger::error("uOTP HTTP 403: {$errorMsg}");
+            return [
+                'success' => false,
+                'status'  => 403,
+                'body'    => $body,
+                'error'   => $errorMsg
+            ];
+        }
+
         if ($httpCode === 401 || $body === 'BAD_KEY') {
             return [
                 'success' => false,
@@ -72,21 +101,13 @@ class UotpProvider extends BaseProvider implements SmsProviderInterface {
             ];
         }
 
-        if ($httpCode === 403) {
-            return [
-                'success' => false,
-                'status'  => 403,
-                'body'    => $body,
-                'error'   => 'HTTP 403 Forbidden: Access denied by uOTP server.'
-            ];
-        }
-
         if ($httpCode >= 500) {
+            $sanitized = trim(substr(strip_tags($body), 0, 100));
             return [
                 'success' => false,
                 'status'  => $httpCode,
                 'body'    => $body,
-                'error'   => "HTTP {$httpCode} Provider Gateway Error: uOTP server is temporarily unavailable."
+                'error'   => "HTTP {$httpCode} Provider Gateway Error" . ($sanitized !== '' ? ": {$sanitized}" : ".")
             ];
         }
 
@@ -151,7 +172,7 @@ class UotpProvider extends BaseProvider implements SmsProviderInterface {
         return [
             'success' => false,
             'status'  => $res['status'],
-            'error'   => "Unexpected response from uOTP: " . substr($body, 0, 100)
+            'error'   => "Unexpected response from uOTP: " . substr(strip_tags($body), 0, 100)
         ];
     }
 
@@ -175,9 +196,12 @@ class UotpProvider extends BaseProvider implements SmsProviderInterface {
         $params = [
             'action'   => 'getNumber',
             'service'  => strtolower(trim($serviceCode)),
-            'country'  => trim($countryCode),
-            'operator' => !empty($operator) && $operator !== 'any' ? trim($operator) : 'any'
+            'country'  => trim($countryCode)
         ];
+
+        if (!empty($operator) && strtolower(trim($operator)) !== 'any') {
+            $params['operator'] = trim($operator);
+        }
 
         $res = $this->callUotp($params);
 
@@ -215,12 +239,14 @@ class UotpProvider extends BaseProvider implements SmsProviderInterface {
             'BAD_KEY'        => 'Invalid uOTP API Key. Please verify credentials in Provider Settings.',
             'BAD_ACTION'     => 'Invalid API action sent to uOTP.',
             'BAD_SERVICE'    => 'The requested service code is not supported by uOTP.',
+            'BAD_COUNTRY'    => 'Invalid country code specified for uOTP.',
             'WRONG_OPERATOR' => 'The requested telecom operator is not available for this country.',
+            'NO_CONNECTION'  => 'uOTP carrier gateway currently offline or unable to connect for this country.',
             'BANNED'         => 'The uOTP account is temporarily restricted (BANNED).',
             'ERROR_SQL'      => 'uOTP gateway encountered an internal database error.'
         ];
 
-        $friendlyError = $errorMap[$body] ?? ("uOTP returned error: " . ($body ?: 'Empty response received.'));
+        $friendlyError = $errorMap[$body] ?? ("uOTP returned: " . ($body ?: 'Empty response received.'));
 
         return [
             'success' => false,
@@ -269,7 +295,7 @@ class UotpProvider extends BaseProvider implements SmsProviderInterface {
         }
 
         // Terminal cancelled / expired states
-        if (in_array($body, ['STATUS_CANCEL', 'NO_ACTIVATION'])) {
+        if (in_array($body, ['STATUS_CANCEL', 'NO_ACTIVATION', 'ERROR_DATABASE'])) {
             return [
                 'status' => 'cancelled',
                 'otp'    => null,
@@ -307,74 +333,84 @@ class UotpProvider extends BaseProvider implements SmsProviderInterface {
         ], true);
     }
 
-    /**
-     * Cancels an activation on uOTP (status=8)
-     */
     public function cancelNumber(string $providerOrderId): bool {
         return $this->setActivationStatus($providerOrderId, 8);
     }
 
-    /**
-     * Finishes/confirms successful activation on uOTP (status=6)
-     */
     public function finishNumber(string $providerOrderId): bool {
         return $this->setActivationStatus($providerOrderId, 6);
     }
 
     /**
-     * 5. Country Import
-     * GET: https://uotp.store/api/stubs/handler_api.php?api_key={API_KEY}&action=getCountries
+     * 5. Country Catalog
+     * Returns standard handler_api country identifier catalog
      */
     public function getCountries(): array {
         if (empty($this->apiKey)) {
             return ['success' => false, 'error' => 'API key is missing or not configured for uOTP.'];
         }
 
-        $res = $this->callUotp(['action' => 'getCountries']);
-
-        if (!$res['success']) {
-            return ['success' => false, 'error' => $res['error'] ?: 'Failed to retrieve countries from uOTP.'];
+        // Test connection first to verify API key validity
+        $test = $this->testConnection();
+        if (!$test['success']) {
+            return ['success' => false, 'error' => $test['error']];
         }
 
-        $data = json_decode($res['body'], true);
-
-        // Fallback: If getCountries returned non-JSON, extract from getPrices
-        if (!is_array($data)) {
-            $pricesRes = $this->callUotp(['action' => 'getPrices']);
-            $pricesData = json_decode($pricesRes['body'], true);
-            if (is_array($pricesData)) {
-                $countries = [];
-                foreach ($pricesData as $countryId => $services) {
-                    $cIdStr = (string)$countryId;
-                    $norm = BaseProvider::getIsoAndPrefix("Country {$cIdStr}");
-                    $countries[] = [
-                        'provider_country_id' => $cIdStr,
-                        'name'                => "Country {$cIdStr}",
-                        'code'                => $norm['code'],
-                        'prefix'              => $norm['prefix']
-                    ];
-                }
-                return ['success' => true, 'countries' => $countries];
-            }
-
-            return [
-                'success' => false,
-                'error'   => 'Invalid response format from uOTP getCountries: ' . substr($res['body'], 0, 150)
-            ];
-        }
+        // Standard handler_api country mapping list
+        $catalog = [
+            ['id' => '22', 'name' => 'India', 'code' => 'IN', 'prefix' => '+91'],
+            ['id' => '0',  'name' => 'Russia', 'code' => 'RU', 'prefix' => '+7'],
+            ['id' => '1',  'name' => 'Ukraine', 'code' => 'UA', 'prefix' => '+380'],
+            ['id' => '2',  'name' => 'Kazakhstan', 'code' => 'KZ', 'prefix' => '+7'],
+            ['id' => '3',  'name' => 'China', 'code' => 'CN', 'prefix' => '+86'],
+            ['id' => '4',  'name' => 'Philippines', 'code' => 'PH', 'prefix' => '+63'],
+            ['id' => '5',  'name' => 'Myanmar', 'code' => 'MM', 'prefix' => '+95'],
+            ['id' => '6',  'name' => 'Indonesia', 'code' => 'ID', 'prefix' => '+62'],
+            ['id' => '7',  'name' => 'Malaysia', 'code' => 'MY', 'prefix' => '+60'],
+            ['id' => '8',  'name' => 'Kenya', 'code' => 'KE', 'prefix' => '+254'],
+            ['id' => '9',  'name' => 'Vietnam', 'code' => 'VN', 'prefix' => '+84'],
+            ['id' => '10', 'name' => 'Kyrgyzstan', 'code' => 'KG', 'prefix' => '+996'],
+            ['id' => '11', 'name' => 'United States', 'code' => 'US', 'prefix' => '+1'],
+            ['id' => '12', 'name' => 'Israel', 'code' => 'IL', 'prefix' => '+972'],
+            ['id' => '13', 'name' => 'Hong Kong', 'code' => 'HK', 'prefix' => '+852'],
+            ['id' => '14', 'name' => 'Poland', 'code' => 'PL', 'prefix' => '+48'],
+            ['id' => '15', 'name' => 'United Kingdom', 'code' => 'GB', 'prefix' => '+44'],
+            ['id' => '16', 'name' => 'Madagascar', 'code' => 'MG', 'prefix' => '+261'],
+            ['id' => '18', 'name' => 'Nigeria', 'code' => 'NG', 'prefix' => '+234'],
+            ['id' => '20', 'name' => 'Egypt', 'code' => 'EG', 'prefix' => '+20'],
+            ['id' => '21', 'name' => 'Ireland', 'code' => 'IE', 'prefix' => '+353'],
+            ['id' => '23', 'name' => 'Cambodia', 'code' => 'KH', 'prefix' => '+855'],
+            ['id' => '24', 'name' => 'Laos', 'code' => 'LA', 'prefix' => '+856'],
+            ['id' => '28', 'name' => 'Serbia', 'code' => 'RS', 'prefix' => '+381'],
+            ['id' => '30', 'name' => 'South Africa', 'code' => 'ZA', 'prefix' => '+27'],
+            ['id' => '31', 'name' => 'Romania', 'code' => 'RO', 'prefix' => '+40'],
+            ['id' => '32', 'name' => 'Colombia', 'code' => 'CO', 'prefix' => '+57'],
+            ['id' => '35', 'name' => 'Canada', 'code' => 'CA', 'prefix' => '+1'],
+            ['id' => '36', 'name' => 'Morocco', 'code' => 'MA', 'prefix' => '+212'],
+            ['id' => '38', 'name' => 'Argentina', 'code' => 'AR', 'prefix' => '+54'],
+            ['id' => '42', 'name' => 'Germany', 'code' => 'DE', 'prefix' => '+49'],
+            ['id' => '47', 'name' => 'Netherlands', 'code' => 'NL', 'prefix' => '+31'],
+            ['id' => '51', 'name' => 'Thailand', 'code' => 'TH', 'prefix' => '+66'],
+            ['id' => '52', 'name' => 'Saudi Arabia', 'code' => 'SA', 'prefix' => '+966'],
+            ['id' => '55', 'name' => 'Spain', 'code' => 'ES', 'prefix' => '+34'],
+            ['id' => '61', 'name' => 'Turkey', 'code' => 'TR', 'prefix' => '+90'],
+            ['id' => '65', 'name' => 'Pakistan', 'code' => 'PK', 'prefix' => '+92'],
+            ['id' => '72', 'name' => 'Brazil', 'code' => 'BR', 'prefix' => '+55'],
+            ['id' => '77', 'name' => 'France', 'code' => 'FR', 'prefix' => '+33'],
+            ['id' => '85', 'name' => 'Italy', 'code' => 'IT', 'prefix' => '+39'],
+            ['id' => '94', 'name' => 'United Arab Emirates', 'code' => 'AE', 'prefix' => '+971'],
+            ['id' => '120','name' => 'Singapore', 'code' => 'SG', 'prefix' => '+65'],
+            ['id' => '124','name' => 'Australia', 'code' => 'AU', 'prefix' => '+61'],
+            ['id' => '187','name' => 'United States (Route 2)', 'code' => 'US', 'prefix' => '+1']
+        ];
 
         $countries = [];
-        foreach ($data as $key => $item) {
-            if (!is_array($item)) continue;
-            $provId = (string)($item['id'] ?? $key);
-            $name = (string)($item['eng'] ?? ($item['rus'] ?? "Country {$provId}"));
-            $isoPrefix = BaseProvider::getIsoAndPrefix($name);
-
+        foreach ($catalog as $item) {
             $countries[] = [
-                'provider_country_id' => $provId,
-                'name'                => $name,
-                'code'                => $isoPrefix['code'],
-                'prefix'              => $isoPrefix['prefix']
+                'provider_country_id' => $item['id'],
+                'name'                => $item['name'],
+                'code'                => $item['code'],
+                'prefix'              => $item['prefix']
             ];
         }
 
@@ -383,53 +419,64 @@ class UotpProvider extends BaseProvider implements SmsProviderInterface {
 
     /**
      * 6. Service, Pricing and Stock Import
-     * GET: https://uotp.store/api/stubs/handler_api.php?api_key={API_KEY}&action=getPrices&country={COUNTRY}
+     * Queries: action=getPrices&api_key={API_KEY}&country={COUNTRY}
      */
     public function getServices(?string $providerCountryCode = null): array {
         if (empty($this->apiKey)) {
             return ['success' => false, 'error' => 'API key is missing or not configured for uOTP.'];
         }
 
-        $params = ['action' => 'getPrices'];
-        if ($providerCountryCode !== null && $providerCountryCode !== '') {
-            $params['country'] = $providerCountryCode;
-        }
+        $country = $providerCountryCode !== null && $providerCountryCode !== '' ? trim($providerCountryCode) : '22';
 
-        $res = $this->callUotp($params);
+        $res = $this->callUotp([
+            'action'  => 'getPrices',
+            'country' => $country
+        ]);
 
         if (!$res['success']) {
             return ['success' => false, 'error' => $res['error'] ?: 'Failed to retrieve prices from uOTP.'];
         }
 
-        $data = json_decode($res['body'], true);
-        if (!is_array($data)) {
+        $body = $res['body'];
+
+        if ($body === 'NO_CONNECTION') {
             return [
                 'success' => false,
-                'error'   => 'Invalid response format from uOTP getPrices: ' . substr($res['body'], 0, 150)
+                'error'   => "uOTP returned: NO_CONNECTION (Carrier route currently offline or connecting for country #{$country})"
             ];
         }
 
-        $rawServices = $data;
-        if ($providerCountryCode !== null && isset($data[$providerCountryCode]) && is_array($data[$providerCountryCode])) {
-            $rawServices = $data[$providerCountryCode];
-        } elseif (isset($data['0']) && is_array($data['0'])) {
-            $rawServices = $data['0'];
+        if ($body === 'BAD_COUNTRY') {
+            return [
+                'success' => false,
+                'error'   => "uOTP returned: BAD_COUNTRY (Invalid country ID '{$country}')"
+            ];
+        }
+
+        $data = json_decode($body, true);
+        if (!is_array($data)) {
+            return [
+                'success' => false,
+                'error'   => 'Unexpected response from uOTP getPrices: ' . substr(strip_tags($body), 0, 150)
+            ];
         }
 
         $services = [];
-        foreach ($rawServices as $svcCode => $svcInfo) {
-            if (!is_array($svcInfo)) continue;
-            $codeStr = (string)$svcCode;
-            $cost = isset($svcInfo['cost']) ? (float)$svcInfo['cost'] : (isset($svcInfo['price']) ? (float)$svcInfo['price'] : null);
-            $count = isset($svcInfo['count']) ? (int)$svcInfo['count'] : (isset($svcInfo['qty']) ? (int)$svcInfo['qty'] : null);
-            $name = CustomApiProvider::formatServiceName($codeStr);
+        // uOTP response format: [{"servicecode":"whatsapp","name":"WhatsApp","price":70}, ...]
+        foreach ($data as $item) {
+            if (!is_array($item)) continue;
+            $codeStr = (string)($item['servicecode'] ?? '');
+            if (empty($codeStr)) continue;
+
+            $name = (string)($item['name'] ?? self::formatServiceName($codeStr));
+            $cost = isset($item['price']) && is_numeric($item['price']) ? (float)$item['price'] : 0.00;
 
             $services[] = [
                 'provider_service_id' => $codeStr,
                 'name'                => $name,
-                'code'                => $codeStr,
+                'code'                => strtolower($codeStr),
                 'cost'                => $cost,
-                'count'               => $count
+                'count'               => null
             ];
         }
 
@@ -437,41 +484,33 @@ class UotpProvider extends BaseProvider implements SmsProviderInterface {
     }
 
     /**
-     * 7. Operator Import
-     * GET: https://uotp.store/api/stubs/handler_api.php?api_key={API_KEY}&action=getOperators&country={COUNTRY}
+     * 7. Operators
      */
     public function getOperators(?string $providerCountryCode = null): array {
-        if (empty($this->apiKey)) {
-            return ['success' => false, 'error' => 'API key is missing or not configured for uOTP.'];
-        }
-
-        $params = ['action' => 'getOperators'];
-        if ($providerCountryCode !== null && $providerCountryCode !== '') {
-            $params['country'] = $providerCountryCode;
-        }
-
-        $res = $this->callUotp($params);
-        if (!$res['success']) {
-            // Default operator fallback
-            return ['success' => true, 'operators' => ['any']];
-        }
-
-        $data = json_decode($res['body'], true);
-        if (is_array($data)) {
-            $operators = [];
-            foreach ($data as $op) {
-                if (is_string($op)) {
-                    $operators[] = $op;
-                } elseif (is_array($op) && !empty($op['name'])) {
-                    $operators[] = (string)$op['name'];
-                }
-            }
-            if (!in_array('any', $operators)) {
-                array_unshift($operators, 'any');
-            }
-            return ['success' => true, 'operators' => $operators];
-        }
-
         return ['success' => true, 'operators' => ['any']];
+    }
+
+    public static function formatServiceName(string $code): string {
+        $map = [
+            'wa'       => 'WhatsApp',
+            'whatsapp' => 'WhatsApp',
+            'tg'       => 'Telegram',
+            'telegram' => 'Telegram',
+            'go'       => 'Google / Gmail',
+            'google'   => 'Google / Gmail',
+            'openai'   => 'OpenAI / ChatGPT',
+            'ig'       => 'Instagram',
+            'instagram'=> 'Instagram',
+            'tw'       => 'Twitter / X',
+            'twitter'  => 'Twitter / X',
+            'ub'       => 'Uber',
+            'uber'     => 'Uber',
+            'fb'       => 'Facebook',
+            'facebook' => 'Facebook',
+            'lf'       => 'TikTok',
+            'tiktok'   => 'TikTok'
+        ];
+        $lower = strtolower(trim($code));
+        return $map[$lower] ?? ucwords(str_replace(['_', '-'], ' ', $code));
     }
 }
