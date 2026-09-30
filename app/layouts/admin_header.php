@@ -115,6 +115,9 @@ $flashes = get_flash();
                 <a href="/admin/providers.php" class="px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-colors <?= $currentScript === 'providers.php' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-300 hover:text-white hover:bg-slate-700/50' ?>">
                     SMS Providers API
                 </a>
+                <a href="/admin/provider_import.php" class="px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-colors <?= $currentScript === 'provider_import.php' ? 'bg-emerald-600 text-white shadow-xs' : 'text-emerald-400 hover:text-white hover:bg-slate-700/50' ?>">
+                    Import API
+                </a>
                 <a href="/admin/services.php" class="px-3 py-1.5 rounded-md text-xs font-semibold whitespace-nowrap transition-colors <?= $currentScript === 'services.php' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-300 hover:text-white hover:bg-slate-700/50' ?>">
                     Services
                 </a>

@@ -172,3 +172,31 @@ CREATE TABLE IF NOT EXISTS `audit_logs` (
   `ip_address` VARCHAR(45) NULL,
   `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `provider_country_mappings` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `provider_id` INT NOT NULL,
+  `country_id` INT NOT NULL,
+  `provider_country_id` VARCHAR(50) NOT NULL,
+  `provider_country_name` VARCHAR(100) NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uk_prov_country` (`provider_id`, `provider_country_id`),
+  INDEX `idx_pcm_country` (`country_id`),
+  INDEX `idx_pcm_prov` (`provider_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `provider_service_mappings` (
+  `id` INT AUTO_INCREMENT PRIMARY KEY,
+  `provider_id` INT NOT NULL,
+  `service_id` INT NOT NULL,
+  `provider_service_id` VARCHAR(50) NOT NULL,
+  `provider_service_name` VARCHAR(100) NULL,
+  `cost_price` DECIMAL(10, 2) NULL,
+  `available_count` INT NULL,
+  `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY `uk_prov_service` (`provider_id`, `provider_service_id`),
+  INDEX `idx_psm_service` (`service_id`),
+  INDEX `idx_psm_prov` (`provider_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

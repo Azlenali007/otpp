@@ -95,4 +95,100 @@ class FiveSimProvider extends BaseProvider implements SmsProviderInterface {
         $res = $this->execute5Sim("cancel/{$providerOrderId}", [], 'GET');
         return isset($res['data']['status']) && $res['data']['status'] === 'CANCELED';
     }
+
+    public function getCountries(): array {
+        $res = $this->execute5Sim('countries');
+        if (empty($res['data']) || !is_array($res['data'])) {
+            $ch = curl_init('https://5sim.net/v1/guest/countries');
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            $guestRes = curl_exec($ch);
+            curl_close($ch);
+            $res['data'] = json_decode((string)$guestRes, true);
+        }
+
+        if (empty($res['data']) || !is_array($res['data'])) {
+            return ['success' => false, 'error' => 'Failed to retrieve country data from 5SIM: ' . ($res['body'] ?: 'Invalid JSON response')];
+        }
+
+        $countries = [];
+        foreach ($res['data'] as $slugKey => $cData) {
+            if (!is_array($cData)) continue;
+            $slug = (string)$slugKey;
+            $name = (string)($cData['text_en'] ?? ($cData['text'] ?? ucwords(str_replace('_', ' ', $slug))));
+
+            $prefix = '';
+            if (!empty($cData['prefix'])) {
+                if (is_array($cData['prefix'])) {
+                    $prefix = (string)key($cData['prefix']);
+                } else {
+                    $prefix = (string)$cData['prefix'];
+                }
+            }
+
+            $iso = '';
+            if (!empty($cData['iso'])) {
+                if (is_array($cData['iso'])) {
+                    $iso = strtoupper((string)key($cData['iso']));
+                } else {
+                    $iso = strtoupper((string)$cData['iso']);
+                }
+            }
+
+            if (empty($iso) || empty($prefix)) {
+                $norm = BaseProvider::getIsoAndPrefix($name, $iso, $prefix);
+                if (empty($iso)) $iso = $norm['code'];
+                if (empty($prefix)) $prefix = $norm['prefix'];
+            }
+
+            $countries[] = [
+                'provider_country_id' => $slug,
+                'name'                => $name,
+                'code'                => $iso,
+                'prefix'              => (str_starts_with($prefix, '+') ? '' : '+') . $prefix
+            ];
+        }
+
+        return ['success' => true, 'countries' => $countries];
+    }
+
+    public function getServices(?string $providerCountryCode = null): array {
+        $country = $providerCountryCode ? strtolower($providerCountryCode) : 'usa';
+        $res = $this->execute5Sim("products/{$country}/any");
+        if (empty($res['data']) || !is_array($res['data'])) {
+            $ch = curl_init("https://5sim.net/v1/guest/products/{$country}/any");
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 15);
+            curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+            $guestRes = curl_exec($ch);
+            curl_close($ch);
+            $res['data'] = json_decode((string)$guestRes, true);
+        }
+
+        if (empty($res['data']) || !is_array($res['data'])) {
+            return ['success' => false, 'error' => "Failed to retrieve services for country '{$country}' from 5SIM: " . ($res['body'] ?: 'Invalid response')];
+        }
+
+        $services = [];
+        foreach ($res['data'] as $svcCode => $item) {
+            if (!is_array($item)) continue;
+            $codeStr = (string)$svcCode;
+            $cost = isset($item['Price']) ? (float)$item['Price'] : (isset($item['cost']) ? (float)$item['cost'] : null);
+            $count = isset($item['Qty']) ? (int)$item['Qty'] : (isset($item['count']) ? (int)$item['count'] : null);
+            $name = ucwords(str_replace(['_', '-'], ' ', $codeStr));
+
+            $services[] = [
+                'provider_service_id' => $codeStr,
+                'name'                => $name,
+                'code'                => $codeStr,
+                'cost'                => $cost,
+                'count'               => $count
+            ];
+        }
+
+        return ['success' => true, 'services' => $services];
+    }
 }

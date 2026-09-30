@@ -68,8 +68,8 @@ class SmsActivateProvider extends BaseProvider implements SmsProviderInterface {
             ];
         }
 
-        if ($res['body'] === 'STATUS_CANCEL') {
-            return ['status' => 'cancelled', 'otp' => null, 'text' => null];
+        if (in_array($res['body'], ['STATUS_CANCEL', 'STATUS_EXPIRED', 'NO_ACTIVATION'])) {
+            return ['status' => 'expired', 'otp' => null, 'text' => null];
         }
 
         return ['status' => 'waiting', 'otp' => null, 'text' => null];
@@ -82,9 +82,111 @@ class SmsActivateProvider extends BaseProvider implements SmsProviderInterface {
         $res = $this->executeRequest($this->apiUrl, [
             'api_key' => $this->apiKey,
             'action'  => 'setStatus',
-            'status'  => '8', // 8 = cancel activation
+            'status'  => '8',
             'id'      => $providerOrderId
         ]);
         return str_starts_with($res['body'], 'ACCESS_CANCEL');
+    }
+
+    public function getCountries(): array {
+        if (empty($this->apiKey)) {
+            return ['success' => false, 'error' => 'API key is missing or not configured for this provider.'];
+        }
+        $res = $this->executeRequest($this->apiUrl, [
+            'api_key' => $this->apiKey,
+            'action'  => 'getCountries'
+        ]);
+
+        if (empty($res['body'])) {
+            return ['success' => false, 'error' => 'No response received from provider gateway: ' . ($res['error'] ?: 'Connection failed/timed out')];
+        }
+
+        if (str_starts_with($res['body'], 'BAD_KEY')) {
+            return ['success' => false, 'error' => 'Provider rejected API key (BAD_KEY). Please verify provider credentials in Admin.'];
+        }
+
+        $data = json_decode((string)$res['body'], true);
+        if (!is_array($data)) {
+            return ['success' => false, 'error' => 'Invalid data format returned by provider: ' . substr($res['body'], 0, 150)];
+        }
+
+        $countries = [];
+        foreach ($data as $key => $item) {
+            if (!is_array($item)) continue;
+            $provId = (string)($item['id'] ?? $key);
+            $name = (string)($item['eng'] ?? ($item['rus'] ?? "Country {$provId}"));
+            $isoPrefix = BaseProvider::getIsoAndPrefix($name);
+            $countries[] = [
+                'provider_country_id' => $provId,
+                'name'                => $name,
+                'code'                => $isoPrefix['code'],
+                'prefix'              => $isoPrefix['prefix']
+            ];
+        }
+
+        return ['success' => true, 'countries' => $countries];
+    }
+
+    public function getServices(?string $providerCountryCode = null): array {
+        if (empty($this->apiKey)) {
+            return ['success' => false, 'error' => 'API key is missing or not configured for this provider.'];
+        }
+
+        $params = [
+            'api_key' => $this->apiKey,
+            'action'  => 'getPrices'
+        ];
+        if ($providerCountryCode !== null && $providerCountryCode !== '') {
+            $params['country'] = $providerCountryCode;
+        }
+
+        $res = $this->executeRequest($this->apiUrl, $params);
+        if (empty($res['body'])) {
+            return ['success' => false, 'error' => 'No response received from provider gateway: ' . ($res['error'] ?: 'Connection failed/timed out')];
+        }
+
+        if (str_starts_with($res['body'], 'BAD_KEY')) {
+            return ['success' => false, 'error' => 'Provider rejected API key (BAD_KEY).'];
+        }
+
+        $data = json_decode((string)$res['body'], true);
+        if (!is_array($data)) {
+            return ['success' => false, 'error' => 'Invalid data format returned by provider: ' . substr($res['body'], 0, 150)];
+        }
+
+        $rawServices = $data;
+        if ($providerCountryCode !== null && isset($data[$providerCountryCode]) && is_array($data[$providerCountryCode])) {
+            $rawServices = $data[$providerCountryCode];
+        } elseif (isset($data['0']) && is_array($data['0'])) {
+            $rawServices = $data['0'];
+        }
+
+        $nameMap = [
+            'wa' => 'WhatsApp', 'tg' => 'Telegram', 'go' => 'Google / Gmail', 'ig' => 'Instagram',
+            'tw' => 'Twitter / X', 'fb' => 'Facebook', 'vi' => 'Viber', 'lf' => 'TikTok',
+            'ub' => 'Uber', 'oi' => 'Tinder', 'ds' => 'Discord', 'am' => 'Amazon',
+            'ni' => 'Steam', 'me' => 'Line', 'mb' => 'Yahoo', 'wb' => 'WeChat',
+            'ot' => 'Any Other Service', 'dr' => 'OpenAI / ChatGPT', 'openai' => 'OpenAI / ChatGPT',
+            'full' => 'Full SMS Service'
+        ];
+
+        $services = [];
+        foreach ($rawServices as $svcCode => $svcInfo) {
+            if (!is_array($svcInfo)) continue;
+            $codeStr = (string)$svcCode;
+            $cost = isset($svcInfo['cost']) ? (float)$svcInfo['cost'] : (isset($svcInfo['price']) ? (float)$svcInfo['price'] : null);
+            $count = isset($svcInfo['count']) ? (int)$svcInfo['count'] : (isset($svcInfo['qty']) ? (int)$svcInfo['qty'] : null);
+            $name = $nameMap[strtolower($codeStr)] ?? (ucwords(str_replace('_', ' ', $codeStr)) . " ({$codeStr})");
+
+            $services[] = [
+                'provider_service_id' => $codeStr,
+                'name'                => $name,
+                'code'                => $codeStr,
+                'cost'                => $cost,
+                'count'               => $count
+            ];
+        }
+
+        return ['success' => true, 'services' => $services];
     }
 }

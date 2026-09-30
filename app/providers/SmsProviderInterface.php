@@ -12,4 +12,6 @@ interface SmsProviderInterface {
     public function requestNumber(string $serviceCode, string $countryCode): array;
     public function checkOtp(string $providerOrderId): array;
     public function cancelNumber(string $providerOrderId): bool;
+    public function getCountries(): array;
+    public function getServices(?string $providerCountryCode = null): array;
 }

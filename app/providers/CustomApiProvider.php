@@ -72,4 +72,67 @@ class CustomApiProvider extends BaseProvider implements SmsProviderInterface {
         $data = json_decode((string)$res['body'], true);
         return !empty($data['success']);
     }
+
+    public function getCountries(): array {
+        if (empty($this->apiKey)) {
+            return ['success' => false, 'error' => 'Custom API provider key not configured.'];
+        }
+        $res = $this->executeRequest($this->apiUrl . '/countries', ['key' => $this->apiKey]);
+        $data = json_decode((string)$res['body'], true);
+        if (!is_array($data)) {
+            return ['success' => false, 'error' => 'Invalid response from Custom API /countries: ' . ($res['body'] ?: $res['error'])];
+        }
+
+        $countries = [];
+        foreach ($data as $key => $item) {
+            if (!is_array($item)) continue;
+            $provId = (string)($item['id'] ?? ($item['code'] ?? $key));
+            $name = (string)($item['name'] ?? "Country {$provId}");
+            $code = (string)($item['code'] ?? '');
+            $prefix = (string)($item['prefix'] ?? '');
+            $norm = BaseProvider::getIsoAndPrefix($name, $code, $prefix);
+
+            $countries[] = [
+                'provider_country_id' => $provId,
+                'name'                => $name,
+                'code'                => $norm['code'],
+                'prefix'              => $norm['prefix']
+            ];
+        }
+        return ['success' => true, 'countries' => $countries];
+    }
+
+    public function getServices(?string $providerCountryCode = null): array {
+        if (empty($this->apiKey)) {
+            return ['success' => false, 'error' => 'Custom API provider key not configured.'];
+        }
+        $params = ['key' => $this->apiKey];
+        if (!empty($providerCountryCode)) {
+            $params['country'] = $providerCountryCode;
+        }
+        $res = $this->executeRequest($this->apiUrl . '/services', $params);
+        $data = json_decode((string)$res['body'], true);
+        if (!is_array($data)) {
+            return ['success' => false, 'error' => 'Invalid response from Custom API /services: ' . ($res['body'] ?: $res['error'])];
+        }
+
+        $services = [];
+        foreach ($data as $key => $item) {
+            if (!is_array($item)) continue;
+            $provId = (string)($item['id'] ?? ($item['code'] ?? $key));
+            $name = (string)($item['name'] ?? "Service {$provId}");
+            $code = strtolower((string)($item['code'] ?? preg_replace('/[^a-zA-Z0-9]/', '', $name)));
+            $cost = isset($item['cost']) ? (float)$item['cost'] : (isset($item['price']) ? (float)$item['price'] : null);
+            $count = isset($item['count']) ? (int)$item['count'] : (isset($item['stock']) ? (int)$item['stock'] : null);
+
+            $services[] = [
+                'provider_service_id' => $provId,
+                'name'                => $name,
+                'code'                => $code,
+                'cost'                => $cost,
+                'count'               => $count
+            ];
+        }
+        return ['success' => true, 'services' => $services];
+    }
 }

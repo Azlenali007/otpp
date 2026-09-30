@@ -69,4 +69,74 @@ class SmsManProvider extends BaseProvider implements SmsProviderInterface {
         $data = json_decode((string)$res['body'], true);
         return !empty($data['success']);
     }
+
+    public function getCountries(): array {
+        if (empty($this->apiKey)) {
+            return ['success' => false, 'error' => 'SMS-Man API key is not configured.'];
+        }
+        $res = $this->executeRequest($this->apiUrl . '/countries', ['token' => $this->apiKey]);
+        $data = json_decode((string)$res['body'], true);
+        if (!is_array($data)) {
+            return ['success' => false, 'error' => 'Failed to parse countries from SMS-Man: ' . ($res['body'] ?: $res['error'])];
+        }
+
+        $countries = [];
+        foreach ($data as $key => $item) {
+            if (!is_array($item)) continue;
+            $provId = (string)($item['id'] ?? $key);
+            $name = (string)($item['title'] ?? "Country {$provId}");
+            $norm = BaseProvider::getIsoAndPrefix($name);
+            $countries[] = [
+                'provider_country_id' => $provId,
+                'name'                => $name,
+                'code'                => $norm['code'],
+                'prefix'              => $norm['prefix']
+            ];
+        }
+        return ['success' => true, 'countries' => $countries];
+    }
+
+    public function getServices(?string $providerCountryCode = null): array {
+        if (empty($this->apiKey)) {
+            return ['success' => false, 'error' => 'SMS-Man API key is not configured.'];
+        }
+        $res = $this->executeRequest($this->apiUrl . '/applications', ['token' => $this->apiKey]);
+        $data = json_decode((string)$res['body'], true);
+        if (!is_array($data)) {
+            return ['success' => false, 'error' => 'Failed to parse services from SMS-Man: ' . ($res['body'] ?: $res['error'])];
+        }
+
+        $prices = [];
+        if (!empty($providerCountryCode)) {
+            $limRes = $this->executeRequest($this->apiUrl . '/limits', [
+                'token'      => $this->apiKey,
+                'country_id' => $providerCountryCode
+            ]);
+            $limData = json_decode((string)$limRes['body'], true);
+            if (is_array($limData)) {
+                $prices = $limData;
+            }
+        }
+
+        $services = [];
+        foreach ($data as $key => $item) {
+            if (!is_array($item)) continue;
+            $provId = (string)($item['id'] ?? $key);
+            $name = (string)($item['title'] ?? "Service {$provId}");
+            $code = strtolower((string)preg_replace('/[^a-zA-Z0-9]/', '', $name));
+            if (empty($code)) $code = "app_" . $provId;
+
+            $cost = isset($prices[$provId]['cost']) ? (float)$prices[$provId]['cost'] : null;
+            $count = isset($prices[$provId]['count']) ? (int)$prices[$provId]['count'] : null;
+
+            $services[] = [
+                'provider_service_id' => $provId,
+                'name'                => $name,
+                'code'                => $code,
+                'cost'                => $cost,
+                'count'               => $count
+            ];
+        }
+        return ['success' => true, 'services' => $services];
+    }
 }
