@@ -1,7 +1,7 @@
 <?php
 /**
  * NumVault - SMS Provider Factory
- * Resolves provider adapters with memory caching and direct mode support
+ * Resolves provider adapters for uOTP API
  */
 
 declare(strict_types=1);
@@ -31,25 +31,11 @@ class ProviderFactory {
             return null;
         }
 
-        $apiUrl = $provider['api_url'] ?? '';
-        $apiKey = $provider['api_key'] ?? '';
-        $slug   = strtolower((string)($provider['slug'] ?? ''));
+        $apiUrl = (string)($provider['api_url'] ?? '');
+        $apiKey = (string)($provider['api_key'] ?? '');
 
-        // Support exact and prefixed slugs (e.g. 5sim, 5sim_2, direct, direct_2, custom, etc.)
-        $instance = null;
-        if (str_starts_with($slug, '5sim')) {
-            $instance = new FiveSimProvider($apiUrl, $apiKey);
-        } elseif (str_starts_with($slug, 'direct') || str_starts_with($slug, 'custom')) {
-            $instance = new CustomApiProvider($apiUrl, $apiKey);
-        } elseif (str_starts_with($slug, 'daisysms')) {
-            $instance = new DaisySmsProvider($apiUrl, $apiKey);
-        } elseif (str_starts_with($slug, 'sms_man')) {
-            $instance = new SmsManProvider($apiUrl, $apiKey);
-        } elseif (str_starts_with($slug, 'sms_activate')) {
-            $instance = new SmsActivateProvider($apiUrl, $apiKey);
-        } else {
-            $instance = new CustomApiProvider($apiUrl, $apiKey);
-        }
+        // Use official uOTP Provider adapter
+        $instance = new UotpProvider($apiUrl, $apiKey);
 
         self::$instances[$providerId] = $instance;
         return $instance;

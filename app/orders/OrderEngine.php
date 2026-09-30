@@ -83,7 +83,8 @@ class OrderEngine {
                 return ['success' => false, 'error' => 'Failed to initialize connection to SMS provider gateway.'];
             }
 
-            $provRes = $provider->requestNumber($server['provider_service_code'], $server['provider_country_code']);
+            $operator = !empty($server['provider_operator_code']) ? (string)$server['provider_operator_code'] : 'any';
+            $provRes = $provider->requestNumber($server['provider_service_code'], $server['provider_country_code'], $operator);
             if (empty($provRes['success']) || empty($provRes['phone'])) {
                 $pdo->rollBack();
                 return [

@@ -225,18 +225,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                         $findServer = $pdo->prepare("SELECT id, cost_price, selling_price FROM servers WHERE service_id = ? AND country_id = ? AND provider_id = ? LIMIT 1");
                         $insServer = $pdo->prepare("
-                            INSERT INTO servers (service_id, country_id, provider_id, server_name, provider_service_code, provider_country_code, cost_price, selling_price, is_enabled)
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1)
+                            INSERT INTO servers (service_id, country_id, provider_id, server_name, provider_service_code, provider_country_code, provider_operator_code, cost_price, selling_price, is_enabled)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
                         ");
                         $updServer = $pdo->prepare("
                             UPDATE servers 
-                            SET provider_service_code = ?, provider_country_code = ?, cost_price = ?
+                            SET provider_service_code = ?, provider_country_code = ?, provider_operator_code = ?, cost_price = ?
                             WHERE id = ?
                         ");
 
                         $added = 0;
                         $updated = 0;
                         $routesCreated = 0;
+
+                        $targetOperator = trim((string)($_POST['target_operator'] ?? 'any'));
+                        if (empty($targetOperator)) $targetOperator = 'any';
 
                         foreach ($items as $item) {
                             $provServiceId = trim((string)($item['provider_service_id'] ?? ''));
@@ -272,7 +275,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
                                     if ($existingServer) {
                                         // Update cost and provider codes while preserving admin configured retail price
-                                        $updServer->execute([$provServiceId, $provCountryCode, $cost, $existingServer['id']]);
+                                        $updServer->execute([$provServiceId, $provCountryCode, $targetOperator, $cost, $existingServer['id']]);
                                     } else {
                                         // Create new server route with transparent margin
                                         $initialSellingPrice = $cost > 0 ? round($cost * 1.5, 2) : 0.50;
@@ -284,6 +287,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                             $serverName,
                                             $provServiceId,
                                             $provCountryCode,
+                                            $targetOperator,
                                             $cost,
                                             $initialSellingPrice
                                         ]);
@@ -528,6 +532,7 @@ require_once __DIR__ . '/../app/layouts/admin_header.php';
                                         <option value="<?= $c['id'] ?>">Link to Route: <?= e($c['name']) ?></option>
                                     <?php endforeach; ?>
                                 </select>
+                                <input type="text" name="target_operator" value="any" placeholder="Operator" title="Target telecom operator (default: any)" class="text-xs px-2.5 py-2 rounded-xl border border-slate-300 bg-white font-mono font-bold w-24">
                                 <input type="hidden" name="target_provider_country_id" value="<?= e($_POST['country_route'] ?? '') ?>">
 
                                 <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition-colors flex items-center gap-2">

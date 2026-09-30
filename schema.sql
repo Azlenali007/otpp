@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS `servers` (
   `server_name` VARCHAR(100) NOT NULL,
   `provider_service_code` VARCHAR(50) NOT NULL,
   `provider_country_code` VARCHAR(50) NOT NULL,
+  `provider_operator_code` VARCHAR(50) DEFAULT 'any',
   `cost_price` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
   `selling_price` DECIMAL(10, 2) NOT NULL DEFAULT 0.00,
   `is_enabled` TINYINT(1) DEFAULT 1,
