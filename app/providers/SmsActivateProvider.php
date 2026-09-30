@@ -8,18 +8,27 @@ declare(strict_types=1);
 namespace App\Providers;
 
 class SmsActivateProvider extends BaseProvider implements SmsProviderInterface {
-    public function getBalance(): float {
+    public function testConnection(): array {
         if (empty($this->apiKey)) {
-            return 0.00;
+            return ['success' => false, 'error' => 'API key is not configured for this provider.'];
         }
         $res = $this->executeRequest($this->apiUrl, [
             'api_key' => $this->apiKey,
             'action'  => 'getBalance'
         ]);
         if (str_starts_with($res['body'], 'ACCESS_BALANCE:')) {
-            return (float)str_replace('ACCESS_BALANCE:', '', $res['body']);
+            $bal = (float)str_replace('ACCESS_BALANCE:', '', $res['body']);
+            return ['success' => true, 'status' => 200, 'balance' => $bal];
         }
-        return 0.00;
+        if (str_starts_with($res['body'], 'BAD_KEY')) {
+            return ['success' => false, 'status' => 401, 'error' => 'HTTP 401 Unauthorized: Provider rejected API key (BAD_KEY).'];
+        }
+        return ['success' => false, 'status' => 400, 'error' => 'Provider error: ' . ($res['body'] ?: $res['error'])];
+    }
+
+    public function getBalance(): float {
+        $conn = $this->testConnection();
+        return $conn['success'] ? (float)$conn['balance'] : 0.00;
     }
 
     public function requestNumber(string $serviceCode, string $countryCode): array {

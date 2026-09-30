@@ -8,11 +8,19 @@ declare(strict_types=1);
 namespace App\Providers;
 
 class SmsManProvider extends BaseProvider implements SmsProviderInterface {
-    public function getBalance(): float {
-        if (empty($this->apiKey)) return 0.00;
+    public function testConnection(): array {
+        if (empty($this->apiKey)) return ['success' => false, 'error' => 'API token is not configured.'];
         $res = $this->executeRequest($this->apiUrl . '/get-balance', ['token' => $this->apiKey]);
         $data = json_decode((string)$res['body'], true);
-        return (float)($data['balance'] ?? 0.00);
+        if (isset($data['balance'])) {
+            return ['success' => true, 'status' => 200, 'balance' => (float)$data['balance']];
+        }
+        return ['success' => false, 'status' => 400, 'error' => 'SMS-Man error: ' . ($data['error_msg'] ?? ($res['body'] ?: $res['error']))];
+    }
+
+    public function getBalance(): float {
+        $conn = $this->testConnection();
+        return $conn['success'] ? (float)$conn['balance'] : 0.00;
     }
 
     public function requestNumber(string $serviceCode, string $countryCode): array {

@@ -349,6 +349,23 @@ require_once __DIR__ . '/../app/layouts/admin_header.php';
         </div>
     <?php endif; ?>
 
+    <?php if (empty($providers)): ?>
+        <div class="bg-white rounded-2xl border border-slate-200/80 p-12 text-center space-y-4 shadow-xs">
+            <div class="w-16 h-16 bg-blue-50 text-blue-600 rounded-2xl flex items-center justify-center mx-auto">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+            </div>
+            <div>
+                <h3 class="text-base font-extrabold text-slate-900">No Providers Configured</h3>
+                <p class="text-xs text-slate-500 max-w-md mx-auto mt-1">Please add your 5SIM or Custom SMS provider first before importing countries and services.</p>
+            </div>
+            <div>
+                <a href="/admin/providers.php?action=new" class="inline-flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs transition-colors">
+                    + Add Custom Provider
+                </a>
+            </div>
+        </div>
+    <?php else: ?>
+
     <!-- Provider Selection & Tabs Card -->
     <div class="bg-white rounded-2xl border border-slate-200/80 shadow-xs p-6 space-y-6">
         <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-5 border-b border-slate-100">
@@ -566,6 +583,7 @@ require_once __DIR__ . '/../app/layouts/admin_header.php';
         <?php endif; ?>
 
     </div>
+    <?php endif; ?>
 
 </div>
 
